@@ -351,21 +351,22 @@ class LBFGS(Optimizer):
                 y = flat_grad.sub(prev_flat_grad)
                 s = d.mul(t)
                 ys = y.dot(s)  # y*s
-                if ys > 1e-10:
+                # We do not need to check the ys condition anymore
+                # if ys > 1e-10:
                     # updating memory
-                    if len(old_dirs) == history_size:
-                        # shift history by one (limited-memory)
-                        old_dirs.pop(0)
-                        old_stps.pop(0)
-                        ro.pop(0)
+                if len(old_dirs) == history_size:
+                    # shift history by one (limited-memory)
+                    old_dirs.pop(0)
+                    old_stps.pop(0)
+                    ro.pop(0)
 
-                    # store new direction/step
-                    old_dirs.append(y)
-                    old_stps.append(s)
-                    ro.append(1. / ys)
+                # store new direction/step
+                old_dirs.append(y)
+                old_stps.append(s)
+                ro.append(1. / ys)
 
-                    # update scale of initial Hessian approximation
-                    H_diag = ys / y.dot(y)  # (y*y)
+                # update scale of initial Hessian approximation
+                H_diag = ys / y.dot(y)  # (y*y)
 
                 # compute the approximate (L-BFGS) inverse Hessian
                 # multiplied by the gradient
