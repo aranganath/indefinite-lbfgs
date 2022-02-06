@@ -522,7 +522,7 @@ class indefLBFGS(Optimizer):
 		lambdamin = torch.min(Lambda[0], gamma)
 
 
-		Psig = Psi.T @ g
+		Psig = Psi.T @ g 
 
 		g_parallel = U_par.T @ g
 
@@ -560,7 +560,7 @@ class indefLBFGS(Optimizer):
 
 				else:
 					e = torch.zeros(g.shape[0])
-					
+
 
 		
 		#Compute lambda as in equation (7)
