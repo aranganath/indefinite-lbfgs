@@ -683,7 +683,7 @@ class indefLBFGS(Optimizer):
 		return phiBar, phiBar_g
 
 	def ComputeBySMW(self, tauStar, g, Psig, invM, PsiPsi, Psi):
-		vw = tauStar**2*invM + tauStar*PsiPsi
+		vw = tauStar**2*invM + tauStar*PsiPsi 
 		tmp = torch.inverse(vw) @ Psig
 		Psitmp = Psi @ tmp
 		sstar = -g/tauStar + Psitmp
