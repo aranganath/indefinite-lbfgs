@@ -4,6 +4,7 @@ from functools import reduce
 import numpy as np
 import scipy.linalg as sl
 from pdb import set_trace
+import math
 
 def _cubic_interpolate(x1, f1, g1, x2, f2, g2, bounds=None):
     # ported from https://github.com/torch/optim/blob/master/polyinterp.lua
@@ -466,7 +467,7 @@ class indefLBFGS(Optimizer):
 		return orig_loss
 
 	def LBFGS(self, S, SS, YY, SY, Y, g, gammaIn, delta):
-
+		tol = 1e-10
 		try:
 			A = torch.tril(SY) + torch.tril(SY,-1).T
 			B = SS
@@ -528,13 +529,14 @@ class indefLBFGS(Optimizer):
 
 		a_kp2 = torch.sqrt(torch.abs(g.T @ g - g_parallel.T @ g_parallel))
 
-		if a_kp2 < 1e-10:
+		if a_kp2 < tol:
 			a_kp2 = 0
 
 		a_j = torch.cat((g_parallel, a_kp2.unsqueeze(0)))
+		
 
 		if (lambdamin>0) and torch.norm(a_j/Lambda)<=delta:
-			sigmastar = 0
+			sigmaStar = 0
 			vw = gamma**2*invM + gamma*PsiPsi
 			tmp = torch.inverse(vw) @ Psig
 			Psitmp = Psi @ tmp
@@ -543,10 +545,10 @@ class indefLBFGS(Optimizer):
 		elif (lambdamin<=0) and self.phiBar_f(-lambdamin,delta,Lambda,a_j) >0:
 			sigmaStar = -lambdamin
 
-			index_pseudo = torch.where(torch.abs(Lambda + sigmaStar)>1e-10)[0]
+			index_pseudo = torch.where(torch.abs(Lambda + sigmaStar)>tol)[0]
 			v = torch.zeros(sizeD+1)
 			v[index_pseudo] = a_j[index_pseudo]/(Lambda[index_pseudo]+sigmaStar)
-			if abs(gamma+sigmaStar)<1e-10:
+			if torch.abs(gamma+sigmaStar)<tol:
 				sstar = -U_par @ v[:sizeD]
 			else:
 				sstar = -U_par @ v[:sizeD] + (1/(gamma+sigmaStar)) * (Psi @ (torch.inverse(PsiPsi) @ Psig)) - (g/(gamma+sigmaStar))
@@ -555,41 +557,45 @@ class indefLBFGS(Optimizer):
 			
 				alpha = torch.sqrt(delta**2 - sstar.T @ sstar)
 				pHatStar = sstar
-				if torch.abs(lambda_min-Lambda[1])<1e-10:
+				if torch.abs(lambdamin-Lambda[1])<tol:
 					zstar = (1/torch.norm(U_par[:,0]))*alpha*U_par[:,0]
 
 				else:
-					e = torch.zeros(g.shape[0])
+					e = torch.zeros(g.shape)
+					found = 0
+					for j in range(sizeD):
+						e[i] = 1
+						u_min = e - U_par @ U_par[i,:].T
+						if torch.norm(u_min)>tol:
+							found = 1
+							break
+
+						e[i] = 0
+
+					if found == 0:
+						e[m+1]=1
+						u_min = e- U_par @ U_par[i]
+		else:
+			if lambdamin > 0:
+				sigmaStar = self.Newton(-lambdamin, 5, tol, delta, Lambda, a_j)
+
+			else:
+				sigmaStar = self.Newton(-lambdamin, 5, tol, delta, Lambda, a_j)
 
 
-		
-		#Compute lambda as in equation (7)
-		# g_parallel = U_par.T @ flat_grad
-		# C_parallel = []
+			sstar = self.ComputeBySMW(gamma+sigmaStar, g, Psig, invM, PsiPsi, Psi)
+
 
 		gperp = g - U_par @ g_parallel
+		C_parallel = []
 		for i,lam in enumerate(D):
 			c_i = 1/lam
 			C_parallel.append(c_i)
 
 		C_parallel = torch.diag(torch.stack(C_parallel).reshape(-1))
-
-
-		if torch.norm(gperp) < 1e-15:
-			#The solution only depends on sstar_parallel
-			sstar_parallel = -C_parallel @ g_parallel
-			sstar =  U_par @ sstar_parallel
-			if sstar.isnan().any():
-				set_trace()
-			alphastar = 0
-			sstar = delta * sstar/torch.norm(sstar)
-			return D, g_parallel, C_parallel, U_par, alphastar, sstar, gamma, False
-		
 		
 
 		alphastar = 1/gamma
-		sstar = -alphastar * flat_grad + U_par @ (alphastar * torch.eye(2*S.shape[1], device=device) - C_parallel) @ g_parallel
-		sstar = delta * sstar/torch.norm(sstar)
 		return D, g_parallel, C_parallel, U_par, alphastar, sstar, gamma, True
 
 
@@ -606,9 +612,8 @@ class indefLBFGS(Optimizer):
 		x_init = self._clone_param()
 		f1 = float(closure())
 		f2,_ = self._directional_evaluate(closure, x_init,1, sstar)
-		self._set_param(x_init)
-		from pdb import set_trace
 		set_trace()
+		self._set_param(x_init)
 		return (f1 - f2)/(-q)
 
 
@@ -618,7 +623,6 @@ class indefLBFGS(Optimizer):
 		from pdb import set_trace
 		D= D + sigma*torch.ones(m)
 		eps_tol = 1e-10
-		set_trace()
 		if (torch.sum(torch.abs(a_j)<eps_tol) >0 ) or (torch.sum(torch.abs(D)) < eps_tol) > 0:
 			pnorm2 = 0
 			for i in range(m):
@@ -670,4 +674,57 @@ class indefLBFGS(Optimizer):
 
 		print(delta)
 		return delta, flag
+
+	def Newton(self, x0, maxIter, tol, delta, Lambda, a_j):
+		x = x0;
+		k = 0;
+
+		f, g  = self.phiBar_fg(x,delta,Lambda,a_j);
+
+		while (torch.abs(f) > 1e-20) and (k < maxIter):
+		    x  = x - f / g;
+		    f, g  = self.phiBar_fg(x,delta,Lambda,a_j);
+		    k = k + 1;
+		
+		return x
+
+	def phiBar_fg(self, sigma, delta, D, a_j):
+		m = a_j.shape[0] 
+		D = D + sigma*torch.ones(m)
+		eps_tol  = 1e-10; 
+		phiBar_g = 0;
+
+		if ( torch.sum(torch.abs(a_j) < eps_tol ) > 0 ) or (torch.sum( torch.abs((D)) < eps_tol ) > 0 ):    
+			pnorm2 = 0
+			for i in range(m):
+				if (torch.abs(a_j[i]) > eps_tol) and (torch.abs(D[i]) < eps_tol):
+					phiBar   = torch.tensor(-1/delta);
+					phiBar_g = 1/torch.sqrt(torch.tensor(eps_tol));
+					return phiBar, phiBar_g
+
+				elif torch.abs(a_j[i]) > eps_tol and torch.abs(D[i]) > eps_tol:
+					pnorm2   = pnorm2   +  (a_j[i]/D[i])**2;
+					phiBar_g = phiBar_g + ((a_j[i])^2)/((D[i])**3);
+
+			normP = torch.sqrt(pnorm2);
+			phiBar = 1/normP - 1/delta;
+			phiBar_g = phiBar_g/(normP**3);
+			return phiBar, phiBar_g
+
+		p = a_j/D;
+		normP  = torch.norm(p);
+		phiBar = 1/normP - 1/delta;
+
+		phiBar_g = torch.sum((a_j**2)/(D**3));
+		phiBar_g = phiBar_g/(normP**3);
+
+		return phiBar, phiBar_g
+
+	def ComputeBySMW(self, tauStar, g, Psig, invM, PsiPsi, Psi):
+		vw = tauStar**2*invM + tauStar*PsiPsi
+		tmp = torch.inverse(vw) @ Psig
+		Psitmp = Psi @ tmp
+		sstar = -g/tauStar + Psitmp
+		return sstar
+
 
