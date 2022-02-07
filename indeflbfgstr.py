@@ -370,8 +370,8 @@ class indefLBFGS(Optimizer):
 							S = torch.cat([S[:,1:], sstar.unsqueeze(1)], axis=1)
 							Y = torch.cat([Y[:,1:], y.unsqueeze(1)], axis=1)
 
-				D, g_parallel, C_parallel, U_par, alphastar,sstar, gamma, pflag = self.LBFGS(S, SS, YY, SY, Y, flat_grad, gamma, delta)
-				delta, flag = self.trustRegion(D, g_parallel, C_parallel, flat_grad, U_par, alphastar, sstar, gamma, closure, pflag, delta, deltacap)
+				Psip, sstar, gamma, g, M = self.LBFGS(S, SS, YY, SY, Y, flat_grad, gamma, delta)
+				delta, flag = self.trustRegion(g, Psip, gamma, closure, sstar, M, delta)
 				
 					
 			if prev_flat_grad is None:
@@ -469,15 +469,7 @@ class indefLBFGS(Optimizer):
 	def LBFGS(self, S, SS, YY, SY, Y, g, gammaIn, delta):
 		tol = 1e-10
 		try:
-			A = torch.tril(SY) + torch.tril(SY,-1).T
-			B = SS
-
-			v = torch.from_numpy(sl.eigh(A.cpu().numpy(),B.cpu().numpy(), eigvals_only=True))
-			eABmin = min(v)
-			if(eABmin>0):
-				gamma = max(0.5*eABmin, 1e-6)
-			else:
-				gamma = min(1.5*eABmin, -1e-6)
+			gamma = (Y[:,-1].T @ Y[:,-1])/(S[:,-1].T @ Y[:,-1])
 
 		except:	
 			gamma=gammaIn
@@ -497,7 +489,9 @@ class indefLBFGS(Optimizer):
 
 		lower = torch.hstack([torch.tril(SY,-1).T, -torch.diag_embed(torch.diag(SY))])
 		upper = torch.hstack([gamma*SS, torch.tril(SY,-1)])
+		M = torch.vstack( [-upper, -lower])
 		invM = torch.inverse(torch.vstack( [-upper, -lower]))
+
 
 		try:
 			RMR = R @ invM @ R.T
@@ -586,33 +580,19 @@ class indefLBFGS(Optimizer):
 			sstar = self.ComputeBySMW(gamma+sigmaStar, g, Psig, invM, PsiPsi, Psi)
 
 
-		gperp = g - U_par @ g_parallel
-		C_parallel = []
-		for i,lam in enumerate(D):
-			c_i = 1/lam
-			C_parallel.append(c_i)
+		Psip = Psi.T @ sstar
 
-		C_parallel = torch.diag(torch.stack(C_parallel).reshape(-1))
-		
-
-		alphastar = 1/gamma
-		return D, g_parallel, C_parallel, U_par, alphastar, sstar, gamma, True
+		return Psip, sstar, gamma, g, invM
 
 
 
 	
 
-	def lmarquardt(self,  D, g_parallel, C_parallel, g, U_par, alphastar, sstar, gamma, closure, pflag):
-		if pflag:
-	
-			q = g_parallel.T @ (C_parallel**2 @ D * 0.5 - C_parallel) @ g_parallel + 0.5*(gamma*(alphastar)**2 - 2*alphastar)*torch.norm(g - U_par @ g_parallel)**2
-		else:
-			q = g_parallel.T @ (C_parallel**2 @ D * 0.5 - C_parallel) @ g_parallel
-
+	def lmarquardt(self, g, Psis, gamma, closure, sstar, M):
+		q = g.T @ sstar + 0.5*sstar.T @ (gamma *sstar + Psis.T @ M @ Psis)
 		x_init = self._clone_param()
 		f1 = float(closure())
 		f2,_ = self._directional_evaluate(closure, x_init,1, sstar)
-		set_trace()
 		self._set_param(x_init)
 		return (f1 - f2)/(-q)
 
@@ -620,7 +600,6 @@ class indefLBFGS(Optimizer):
 
 	def phiBar_f(self, sigma, delta, D, a_j):
 		m = a_j.shape[0]
-		from pdb import set_trace
 		D= D + sigma*torch.ones(m)
 		eps_tol = 1e-10
 		if (torch.sum(torch.abs(a_j)<eps_tol) >0 ) or (torch.sum(torch.abs(D)) < eps_tol) > 0:
@@ -639,32 +618,15 @@ class indefLBFGS(Optimizer):
 		phiBar =  1/torch.norm(p) - 1/delta
 		return phiBar
 
-	def trustRegion(self, D, g_parallel, C_parallel, g, U_par, alphastar, sstar, gamma, closure, pflag, delta, deltacap):
-		rhok = self.lmarquardt(D, g_parallel, C_parallel, g, U_par, alphastar, sstar, gamma, closure, pflag)
-		
-		# if rhok > self.defaults['eta1']:
-		# 	flag = True
-		# else:
-		# 	flag = False
+	def trustRegion(self, g, Psip, gamma, closure, sstar, M, delta):
 
-		# if rhok >self.defaults['eta2']:
-		# 	delta = 0.5 * mu
-		# elif rhok > self.defaults['eta1'] and rhok<self.defaults['eta2']:
-		# 	mu  = 0.5*(mu + mu*gamma1)
-		# 	# gamma1 = 0.9*gamma1
-		# else:
-		# 	mu = 0.5*(self.defaults['gamma1'] + self.defaults['gamma2'])*mu
-
-		# return mu, flag, gamma1
-
+		rhok = self.lmarquardt(g, Psip, gamma, closure, sstar, M)
 		if rhok < self.defaults['eta']:
 			delta = 0.25*delta
 
-
 		else:
 			if rhok > self.defaults['eta1'] and torch.norm(sstar) == delta:
-				delta = torch.min(2*delta, deltacap)
-
+				delta = torch.min(2*delta, self.deltacap)
 
 		if rhok> self.defaults['eta']:
 			flag = True
