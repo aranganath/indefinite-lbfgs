@@ -206,7 +206,7 @@ class indefLBFGS(Optimizer):
 						history_size=history_size,
 						eta=eta,
 						eta1=eta1,
-						n_iters=0,
+						n_iters=10,
 						max_iters=max_iters,
 						tolerance_change=tolerance_change,
 						tolerance_grad=tolerance_grad, 
@@ -328,7 +328,7 @@ class indefLBFGS(Optimizer):
 		flag = True
 		delta = state.get('delta')
 		while n_iters < max_iters:
-
+			
 			n_iters+=1
 			state['n_iters']+=1
 			if state['n_iters'] == 1:
@@ -338,8 +338,6 @@ class indefLBFGS(Optimizer):
 				SS = None
 				YY = None
 				SY = None
-				delta = deltacap/2
-				sstar = sstar/torch.norm(sstar) * delta
 
 			else:
 				if flag:
@@ -370,7 +368,7 @@ class indefLBFGS(Optimizer):
 							S = torch.cat([S[:,1:], sstar.unsqueeze(1)], axis=1)
 							Y = torch.cat([Y[:,1:], y.unsqueeze(1)], axis=1)
 
-				Psip, sstar, gamma, g, M = self.LBFGS(S, SS, YY, SY, Y, flat_grad, gamma, delta)
+				Psip, sstar, gamma, g, M, S, Y, SS, YY, SY = self.LBFGS(S, SS, YY, SY, Y, flat_grad, gamma, delta)
 				delta, flag = self.trustRegion(g, Psip, gamma, closure, sstar, M, delta)
 				
 					
@@ -423,6 +421,7 @@ class indefLBFGS(Optimizer):
 					# re-evaluate function only if not in last iteration
 					# the reason we do this: in a stochastic setting,
 					# no use to re-evaluate that function here
+					set_trace()
 					with torch.enable_grad():
 						loss = float(closure())
 
@@ -582,7 +581,7 @@ class indefLBFGS(Optimizer):
 
 		Psip = Psi.T @ sstar
 
-		return Psip, sstar, gamma, g, invM
+		return Psip, sstar, gamma, g, invM, S, Y, SS, YY, SY
 
 
 
