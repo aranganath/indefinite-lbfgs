@@ -2,18 +2,31 @@ import torch
 from torch.autograd import Variable
 from indeflbfgstr import indefLBFGS
 from ARCLSR1q import ARCLSR1
+from torch import optim
 
-x = Variable(torch.ones(10)*0.5, requires_grad=True)
+x = Variable(torch.ones(5)*10, requires_grad=True)
 
-y = torch.sum(100*(x[1:] - x[:-1]**2) + (torch.ones(x.shape[0]-1) - x[:-1])**2)
+y = torch.sum((x[1:] - x[:-1]**2)**2 + (torch.ones(x[:-1].shape[0]) - x[:-1])**2)
 
-optimizer = indefLBFGS([x], eta = 0.15, eta1=0.3, history_size=10, max_iters=10)
-optimizer = ARCLSR1([x], gamma1 = 1, gamma2 =10, eta1 = 0.15, eta2 = 0.25, history_size =10, mu=100)
+optimizer = indefLBFGS([x], eta = 0.0, eta1=0.0, history_size=2, max_iters=2)
+# optimizer = ARCLSR1([x], gamma1 = 1, gamma2 =1.2, eta1 = 0.0, eta2 = 0.0, history_size =2, mu=1e5)
+# optimizer = optim.LBFGS([x], history_size=2, max_iter=2)
 
-for _ in range(10):
+for _ in range(100):
+	optimizer.zero_grad()
+
+	y = torch.sum((x[1:] - x[:-1]**2)**2 + (torch.ones(x[:-1].shape[0]) - x[:-1])**2)
+	
 	def closure():
-		return torch.sum(100*(x[1:] - x[:-1]**2) + (torch.ones(x.shape[0]-1) - x[:-1])**2)
+		if torch.is_grad_enabled():
+			optimizer.zero_grad()
+		y = torch.sum((x[1:] - x[:-1]**2)**2 + (torch.ones(x[:-1].shape[0]) - x[:-1])**2)
+		if y.requires_grad:
+			y.backward()
+		return y
 
-	y.backward(retain_graph=True)
+	    #And optimizes its weights here
+	y.backward()
 	optimizer.step(closure=closure)
-	print(y)
+	print("x:" +str(x.data))
+	print("Loss: "+str(y.item()))

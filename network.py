@@ -6,7 +6,7 @@ from time import time
 from torchvision import datasets, transforms
 from torch import nn, optim
 from ARCLSR1q import ARCLSR1
-from indeflbfgs import indefLBFGS
+from indeflbfgstr import indefLBFGS
 from torch.nn import functional as F
 transform = transforms.Compose([transforms.ToTensor(),
                               transforms.Normalize((0.5,), (0.5,)),
@@ -49,7 +49,7 @@ images = images.view(images.shape[0], -1)
 
 
 # optimizer = optim.Adam(model.parameters(), lr=0.003)
-optimizer = indefLBFGS(model.parameters(), gamma1 = 1, gamma2 =10, eta1 = 0.15, eta2 = 0.25, history_size =10, mu=100)
+optimizer = indefLBFGS(model.parameters(), history_size = 10, eta=0.15, eta1=0.25)
 # optimizer = ARCLSR1(model.parameters(), gamma1 = 1, gamma2 =10, eta1 = 0.15, eta2 = 0.25, history_size =10, mu=100)
 time0 = time()
 epochs = 100
