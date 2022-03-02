@@ -21,7 +21,7 @@ elif opt == 'indefLBFGS':
 L = []
 for _ in range(100):
 	optimizer.zero_grad()
-
+ 
 	y = torch.sum((x[1:] - x[:-1]**2)**2 + (torch.ones(x[:-1].shape[0]) - x[:-1])**2)
 	
 	def closure():
