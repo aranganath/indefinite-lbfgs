@@ -190,7 +190,7 @@ class indefLBFGS(Optimizer):
 				 eta,
 				 eta1,
 				 history_size,
-				 deltacap=50, 
+				 deltacap=100, 
 				 lr=1e-1,
 				 tolerance_change=1e-9,
 				 tolerance_grad=1e-7,
@@ -300,7 +300,7 @@ class indefLBFGS(Optimizer):
 		device = self._params[0].device.type
 
 
-		flat_grad = self._gather_flat_grad()
+		
 		
 		gamma = 1
 		n_iters = 0
@@ -314,6 +314,7 @@ class indefLBFGS(Optimizer):
 			orig_loss = closure()
 
 		#Define the global state
+		flat_grad = self._gather_flat_grad()
 		S = state.get('S')
 		Y = state.get('Y')
 		SS = state.get('SS')
@@ -325,15 +326,17 @@ class indefLBFGS(Optimizer):
 		state.setdefault('func_evals',0)
 		state.setdefault('n_iters',0)
 		prev_flat_grad = state.get('prev_flat_grad')
-		if prev_flat_grad is None:
-			prev_flat_grad = self._gather_flat_grad()
 		prev_loss = state.get('prev_loss')
 		current_evals = 1
-		flag = True
+		flag = state.get('flag')
+		if flag is None:
+			flag = True
 		delta = state.get('delta')
 		# set_trace()
 		if delta is None:
-			delta = 1
+			delta = 20
+
+		
 		while n_iters < max_iters:
 			
 			n_iters+=1
@@ -349,11 +352,10 @@ class indefLBFGS(Optimizer):
 			else:
 				if flag:
 					# Do the memory update here
+					# print('prev_flat_grad/iteration:{}/{}'.format(n_iters,prev_flat_grad.data))
+					# print('flat_grad/iteration:{}/{}'.format( n_iters,flat_grad.data))
 
 					y = flat_grad.sub(prev_flat_grad)
-					if torch.norm(y) == 0.0:
-						set_trace()
-
 					if S is None:
 
 						S = sstar.unsqueeze(1)
@@ -378,10 +380,12 @@ class indefLBFGS(Optimizer):
 						S = torch.cat([S[:,1:], sstar.unsqueeze(1)], axis=1)
 						Y = torch.cat([Y[:,1:], y.unsqueeze(1)], axis=1)
 
+
 				Psi, Psip, sstar, gamma, g, M, S, Y, SS, YY, SY = self.LBFGS(S, SS, YY, SY, Y, flat_grad, gamma, delta)
 				delta, flag = self.trustRegion(g, Psi, Psip, gamma, closure, sstar, M, delta)
 				
-					
+				
+
 			if prev_flat_grad is None:
 				prev_flat_grad = flat_grad.clone(memory_format=torch.contiguous_format)
 			else:
@@ -432,6 +436,9 @@ class indefLBFGS(Optimizer):
 						flat_grad = self._gather_flat_grad()
 						# if prev_flat_grad and flat_grad == prev_flat_grad:
 						# set_trace()
+						y = flat_grad - prev_flat_grad
+						if torch.norm(y) == 0.0:
+							set_trace()
 
 				opt_cond = flat_grad.abs().max() <= tolerance_grad
 				
@@ -455,7 +462,6 @@ class indefLBFGS(Optimizer):
 			if abs(loss - prev_loss) < tolerance_change:
 				break
 
-
 		state['sstar'] = sstar
 		state['SS'] = SS
 		state['YY'] = YY
@@ -467,6 +473,7 @@ class indefLBFGS(Optimizer):
 		state['prev_loss'] = prev_loss
 		state['t'] = t
 		state['delta'] = delta
+		state['flag'] = flag
 		return orig_loss
 
 	def LBFGS(self, S, SS, YY, SY, Y, g, gammaIn, delta):
@@ -545,11 +552,7 @@ class indefLBFGS(Optimizer):
 
 		if (lambdamin>0) and torch.norm(a_j/Lambda)<=delta:
 			sigmaStar = 0
-			tauStar = gamma + sigmaStar
-			vw = gamma**2*invM + gamma*PsiPsi
-			tmp = torch.inverse(vw) @ Psig
-			Psitmp = Psi @ tmp
-			sstar = -g/tauStar + Psitmp
+			sstar = self.ComputeBySMW(gamma, g, Y, S, gamma, Psig, invM, Psi, PsiPsi)
 
 
 		elif (lambdamin<=0) and self.phiBar_f(-lambdamin,delta,Lambda,a_j) >0:
@@ -566,7 +569,7 @@ class indefLBFGS(Optimizer):
 			
 				alpha = torch.sqrt(delta**2 - sstar.T @ sstar)
 				pHatStar = sstar
-				if torch.abs(lambdamin-Lambda[1])<tol:
+				if torch.abs(lambdamin-Lambda[0])<tol:
 					zstar = (1/torch.norm(U_par[:,0]))*alpha*U_par[:,0]
 
 				else:
@@ -583,13 +586,22 @@ class indefLBFGS(Optimizer):
 
 					if found == 0:
 						e[m+1]=1
-						u_min = e- U_par @ U_par[i]
+						u_min = e- U_par @ U_par[i,:]
+
+				sstar = pHatStar + zstar
+
+
 		else:
 			if lambdamin > 0:
-				sigmaStar = self.Newton(-lambdamin, 5, tol, delta, Lambda, a_j)
+				sigmaStar = self.Newton(0, 10, tol, delta, Lambda, a_j)
 
 			else:
-				sigmaStar = self.Newton(-lambdamin, 5, tol, delta, Lambda, a_j)
+				sigmaHat = torch.max(a_j/delta - Lambda)
+				if sigmaHat > -lambdamin:
+					sigmaStar = self.Newton(sigmaHat, 10, tol, delta, Lambda, a_j)
+				else:
+					sigmaStar = self.Newton(-lambdamin, 10, tol, delta, Lambda, a_j)
+			
 			sstar = self.ComputeBySMW(gamma+sigmaStar, g, Y, S, gamma, Psig, invM, Psi, PsiPsi)
 
 
@@ -640,7 +652,7 @@ class indefLBFGS(Optimizer):
 
 		else:
 			if rhok > self.defaults['eta1'] and torch.norm(sstar) == delta:
-				delta = torch.min(2*delta, self.deltacap)
+				delta = min(2*delta, self.deltacap)
 
 		if rhok> self.defaults['eta']:
 			flag = True
@@ -680,7 +692,7 @@ class indefLBFGS(Optimizer):
 
 				elif torch.abs(a_j[i]) > eps_tol and torch.abs(D[i]) > eps_tol:
 					pnorm2   = pnorm2   +  (a_j[i]/D[i])**2;
-					phiBar_g = phiBar_g + ((a_j[i])**22)/((D[i])**3);
+					phiBar_g = phiBar_g + ((a_j[i])**2)/((D[i])**3);
 
 			normP = torch.sqrt(pnorm2);
 			phiBar = 1/normP - 1/delta;

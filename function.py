@@ -3,15 +3,22 @@ from torch.autograd import Variable
 from indeflbfgstr import indefLBFGS
 from ARCLSR1q import ARCLSR1
 from torch import optim
+import pickle as pkl
 
-x = Variable(torch.ones(5)*10, requires_grad=True)
+x = Variable(torch.ones(5)*100, requires_grad=True)
 
 y = torch.sum((x[1:] - x[:-1]**2)**2 + (torch.ones(x[:-1].shape[0]) - x[:-1])**2)
 
-optimizer = indefLBFGS([x], eta = 0.0, eta1=0.0, history_size=2, max_iters=2)
-# optimizer = ARCLSR1([x], gamma1 = 1, gamma2 =1.2, eta1 = 0.0, eta2 = 0.0, history_size =2, mu=1e5)
-# optimizer = optim.LBFGS([x], history_size=2, max_iter=2)
+opt = 'indefLBFGS'
 
+if opt == 'LBFGS':
+	optimizer = optim.LBFGS([x], history_size=5, max_iter=10)
+
+elif opt == 'indefLBFGS':
+	optimizer = indefLBFGS([x], eta = 0.05, eta1=0.15, history_size=5, max_iters=10, deltacap=10000)
+
+
+L = []
 for _ in range(100):
 	optimizer.zero_grad()
 
@@ -30,3 +37,7 @@ for _ in range(100):
 	optimizer.step(closure=closure)
 	print("x:" +str(x.data))
 	print("Loss: "+str(y.item()))
+	L.append(y.item())
+
+with open('./results/'+opt+'.pkl','wb') as handle:
+	pkl.dump(L, handle)
