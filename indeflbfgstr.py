@@ -347,6 +347,7 @@ class indefLBFGS(Optimizer):
 			else:
 				if flag:
 					y = flat_grad.sub(prev_flat_grad)
+					# set_trace()
 					sstar = sstar.mul(t)
 					if S is None:
 
@@ -373,7 +374,7 @@ class indefLBFGS(Optimizer):
 						Y = torch.cat([Y[:,1:], y.unsqueeze(1)], axis=1)
 
 
-				set_trace()
+				# set_trace()
 				Psi, Psip, sstar, gamma, g, M, S, Y, SS, YY, SY = self.LBFGS(S, SS, YY, SY, Y, flat_grad, gamma, delta)
 				delta, flag = self.trustRegion(g, Psi, Psip, gamma, closure, sstar, M, delta)
 
@@ -404,7 +405,7 @@ class indefLBFGS(Optimizer):
 					loss, flat_grad, t, ls_func_evals = _strong_wolfe(
 						obj_func, x_init, t, sstar, loss, flat_grad, gtd)
 
-				set_trace()
+				# set_trace()
 
 				self._add_grad(t, sstar)
 				opt_cond = flat_grad.abs().max() <= tolerance_grad
@@ -412,7 +413,7 @@ class indefLBFGS(Optimizer):
 			else:
 				# no line search, simply move with fixed-step
 				if flag:
-					set_trace()
+					# set_trace()
 					self._add_grad(t, sstar)
 
 					if n_iters != max_iters:
@@ -458,17 +459,16 @@ class indefLBFGS(Optimizer):
 	def LBFGS(self, S, SS, YY, SY, Y, g, gammaIn, delta):
 		tol = 1e-10
 		try:
-			gamma = (S[:,-1].T @ Y[:,-1])/(Y[:,-1].T @ Y[:,-1])
-			if gamma<0:
-				A = torch.tril(SY) + torch.tril(SY,-1).T
-				B = SS
 
-				v = torch.from_numpy(sl.eigh(A.cpu().numpy(),B.cpu().numpy(), eigvals_only=True))
-				eABmin = min(v)
-				if(eABmin>0):
-					gamma = max(0.5*eABmin, 1e-6)
-				else:
-					gamma = min(1.5*eABmin, -1e-6)
+			A = torch.tril(SY) + torch.tril(SY,-1).T
+			B = SS
+
+			v = torch.from_numpy(sl.eigh(A.cpu().numpy(),B.cpu().numpy(), eigvals_only=True))
+			eABmin = min(v)
+			if(eABmin>0):
+				gamma = max(0.5*eABmin, 1e-6)
+			else:
+				gamma = min(1.5*eABmin, -1e-6)
 
 		except:	
 			gamma=gammaIn
@@ -641,7 +641,7 @@ class indefLBFGS(Optimizer):
 		else:
 			flag = False
 
-		set_trace()
+		# set_trace()
 		return delta, flag
 
 	def Newton(self, x0, maxIter, tol, delta, Lambda, a_j):
