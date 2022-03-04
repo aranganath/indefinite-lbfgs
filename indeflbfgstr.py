@@ -331,13 +331,17 @@ class indefLBFGS(Optimizer):
 		if delta is None:
 			delta = 10
 
-		print(delta)
+		n_iters = 0
+		# print(delta)
 		while n_iters < max_iters:
-			
+			print('Iteration: {}  Iterate: {}   Gradient: {}   Functional value: {}' .format(state['n_iters'], self._params[0].data, self._gather_flat_grad().data, float(closure())))
 			n_iters+=1
+			if state['n_iters'] == 4:
+				set_trace()
 			state['n_iters']+=1
 			if state['n_iters'] == 1:
 				sstar = flat_grad.neg()
+				set_trace()
 				S = None
 				Y = None
 				SS = None
@@ -347,7 +351,6 @@ class indefLBFGS(Optimizer):
 			else:
 				if flag:
 					y = flat_grad.sub(prev_flat_grad)
-					# set_trace()
 					sstar = sstar.mul(t)
 					if S is None:
 
@@ -458,20 +461,22 @@ class indefLBFGS(Optimizer):
 
 	def LBFGS(self, S, SS, YY, SY, Y, g, gammaIn, delta):
 		tol = 1e-10
-		try:
+		gamma = Y[:,-1].dot(Y[:,-1])/Y[:,-1].dot(S[:,-1])
+		if gamma < 0:
+			try:
 
-			A = torch.tril(SY) + torch.tril(SY,-1).T
-			B = SS
+				A = torch.tril(SY) + torch.tril(SY,-1).T
+				B = SS
 
-			v = torch.from_numpy(sl.eigh(A.cpu().numpy(),B.cpu().numpy(), eigvals_only=True))
-			eABmin = min(v)
-			if(eABmin>0):
-				gamma = max(0.5*eABmin, 1e-6)
-			else:
-				gamma = min(1.5*eABmin, -1e-6)
+				v = torch.from_numpy(sl.eigh(A.cpu().numpy(),B.cpu().numpy(), eigvals_only=True))
+				eABmin = min(v)
+				if(eABmin>0):
+					gamma = max(0.5*eABmin, 1e-6)
+				else:
+					gamma = min(1.5*eABmin, -1e-6)
 
-		except:	
-			gamma=gammaIn
+			except:	
+				gamma = gammaIn
 
 		Psi = torch.hstack([gamma*S, Y])
 
@@ -574,14 +579,14 @@ class indefLBFGS(Optimizer):
 
 		else:
 			if lambdamin > 0:
-				sigmaStar = self.Newton(0, 100, tol, delta, Lambda, a_j)
+				sigmaStar = self.Newton(0, 5, tol, delta, Lambda, a_j)
 
 			else:
 				sigmaHat = torch.max(a_j/delta - Lambda)
 				if sigmaHat > -lambdamin:
-					sigmaStar = self.Newton(sigmaHat, 100, tol, delta, Lambda, a_j)
+					sigmaStar = self.Newton(sigmaHat, 5, tol, delta, Lambda, a_j)
 				else:
-					sigmaStar = self.Newton(-lambdamin, 100, tol, delta, Lambda, a_j)
+					sigmaStar = self.Newton(-lambdamin, 5, tol, delta, Lambda, a_j)
 			
 			sstar = self.ComputeBySMW(gamma+sigmaStar, g, Y, S, gamma, Psig, invM, Psi, PsiPsi)
 
@@ -626,8 +631,8 @@ class indefLBFGS(Optimizer):
 	def trustRegion(self, g, Psi, Psip, gamma, closure, sstar, M, delta):
 
 		rhok = self.lmarquardt(g, Psi, Psip, gamma, closure, sstar, M)
-		print('delta: {}'.format(delta))
-		print('rhok: {}'.format(rhok))
+		# print('delta: {}'.format(delta))
+		# print('rhok: {}'.format(rhok))
 		if rhok < self.defaults['eta']:
 			delta = 0.25*delta
 
