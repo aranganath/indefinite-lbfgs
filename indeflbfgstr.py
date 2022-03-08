@@ -207,7 +207,7 @@ class indefLBFGS(Optimizer):
 						history_size=history_size,
 						eta=eta,
 						eta1=eta1,
-						n_iters=10,
+						n_iters=0,
 						max_iters=max_iters,
 						tolerance_change=tolerance_change,
 						tolerance_grad=tolerance_grad, 
@@ -340,13 +340,13 @@ class indefLBFGS(Optimizer):
 		while n_iters < max_iters:
 			if verbose:
 				print('------------------------------------------------------------------------------------------------------------------------------------------------')
-				print('Iteration: {}  Iterate: {}   Gradient: {}   Functional value: {}' .format(state['n_iters'], self._params[0].data, torch.norm(self._gather_flat_grad().data), float(closure())))
+				print('Iteration: {}  Gradient: {}   Functional value: {}' .format(state['n_iters'], torch.norm(self._gather_flat_grad().data), float(closure())))
 				print('rhok: {} trust region radius: {} '.format(self.rhok, delta))
 				print('------------------------------------------------------------------------------------------------------------------------------------------------')
 			n_iters+=1
 			state['n_iters']+=1
-			# if state['n_iters'] == 6:
-			# 	set_trace()
+			if state['n_iters'] == 39:
+				set_trace()
 			if state['n_iters'] == 1:
 				sstar = flat_grad.neg()
 				S = None
@@ -481,7 +481,7 @@ class indefLBFGS(Optimizer):
 				gamma = min(1.5*eABmin, -1e-6)
 
 		except:	
-			gamma = gammaIn
+			gamma = Y[:,-1].dot(Y[:,-1])/S[:,-1].dot(S[:,-1])
 
 		Psi = torch.hstack([gamma*S, Y])
 
@@ -490,15 +490,15 @@ class indefLBFGS(Optimizer):
 		try:
 			R=torch.linalg.cholesky(PsiPsi.transpose(-2,-1).conj()).transpose(-2,-1).conj()
 			Q = Psi @ torch.inverse(R)
-			set_trace()
 			if R.any().isnan():
 				set_trace()
 
 
 		except:
 			Q, R = torch.linalg.qr(Psi)
-			set_trace()
 
+
+		# set_trace()
 		upper = torch.hstack([gamma*SS, torch.tril(SY,-1)])
 		lower = torch.hstack([torch.tril(SY,-1).T, -torch.diag_embed(torch.diag(SY))])
 		
@@ -533,10 +533,10 @@ class indefLBFGS(Optimizer):
 
 
 		a_j = torch.cat((g_parallel, a_kp2.unsqueeze(0))) if not a_kp2.shape else torch.cat((g_parallel, a_kp2))
-		set_trace()	
+		# set_trace()	
 
 		if (lambdamin>0) and torch.norm(a_j/Lambda)<=delta:
-			set_trace()
+			# set_trace()
 			sigmaStar = 0
 			sstar = self.ComputeBySMW(gamma, g, Y, S, gamma, Psig, M, Psi, PsiPsi)
 
@@ -596,7 +596,7 @@ class indefLBFGS(Optimizer):
 			set_trace()
 
 		Psip = Psi.T @ sstar
-		tmp = invM @ Psip
+		# tmp = invM @ Psip
 		return Psi, Psip, sstar, gamma, g, invM, S, Y, SS, YY, SY
 
 
@@ -624,7 +624,7 @@ class indefLBFGS(Optimizer):
 		return phiBar
 
 	def lmarquardt(self, g, Psi, Psis, gamma, closure, sstar, invM):
-		q = g.T @ sstar + 0.5*(gamma*(sstar.T @ sstar)  - Psis.T @ invM @ Psis)
+		q = g.T @ sstar + 0.5*(gamma*(sstar.dot(sstar))  - Psis.T @ invM @ Psis)
 		x_init = self._clone_param()
 		f1 = float(closure())
 		f2,_ = self._directional_evaluate(closure, x_init,1, sstar)
@@ -669,9 +669,9 @@ class indefLBFGS(Optimizer):
 		D = D + sigma*torch.ones(m)
 		eps_tol  = 1e-10
 		phiBar_g = 0
-
-		if (torch.sum(torch.abs(a_j) < eps_tol) > 0) or (torch.sum(torch.abs(D) < eps_tol ) > 0):    
+		if (torch.sum(torch.abs(a_j) < eps_tol) > 0) or (torch.sum(torch.abs(torch.diag(D)) < eps_tol ,0)>0).any():    
 			pnorm2 = torch.zeros(1)
+			# set_trace()
 			for i in range(m):
 				if (torch.abs(a_j[i]) > eps_tol) and (torch.abs(D[i]) < eps_tol):
 					phiBar   = torch.tensor(-1/delta);
